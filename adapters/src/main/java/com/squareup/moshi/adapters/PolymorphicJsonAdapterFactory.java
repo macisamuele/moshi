@@ -110,7 +110,7 @@ public final class PolymorphicJsonAdapterFactory<T> implements JsonAdapter.Facto
   final Class<T> baseType;
   final String labelKey;
   final List<String> labels;
-  final List<Type> subtypes;
+  final List<Class<? extends T>> subtypes;
   @Nullable final T defaultValue;
   final boolean defaultValueSet;
 
@@ -118,7 +118,7 @@ public final class PolymorphicJsonAdapterFactory<T> implements JsonAdapter.Facto
       Class<T> baseType,
       String labelKey,
       List<String> labels,
-      List<Type> subtypes,
+      List<Class<? extends T>> subtypes,
       @Nullable T defaultValue,
       boolean defaultValueSet) {
     this.baseType = baseType;
@@ -142,7 +142,7 @@ public final class PolymorphicJsonAdapterFactory<T> implements JsonAdapter.Facto
         baseType,
         labelKey,
         Collections.<String>emptyList(),
-        Collections.<Type>emptyList(),
+        Collections.<Class<? extends T>>emptyList(),
         null,
         false);
   }
@@ -160,7 +160,7 @@ public final class PolymorphicJsonAdapterFactory<T> implements JsonAdapter.Facto
     }
     List<String> newLabels = new ArrayList<>(labels);
     newLabels.add(label);
-    List<Type> newSubtypes = new ArrayList<>(subtypes);
+    List<Class<? extends T>> newSubtypes = new ArrayList<>(subtypes);
     newSubtypes.add(subtype);
     return new PolymorphicJsonAdapterFactory<>(baseType,
         labelKey,
@@ -184,17 +184,17 @@ public final class PolymorphicJsonAdapterFactory<T> implements JsonAdapter.Facto
   }
 
   @Override
-  public JsonAdapter<?> create(Type type, Set<? extends Annotation> annotations, Moshi moshi) {
+  public JsonAdapter<T> create(Type type, Set<? extends Annotation> annotations, Moshi moshi) {
     if (Types.getRawType(type) != baseType || !annotations.isEmpty()) {
       return null;
     }
 
-    List<JsonAdapter<Object>> jsonAdapters = new ArrayList<>(subtypes.size());
-    for (int i = 0, size = subtypes.size(); i < size; i++) {
-      jsonAdapters.add(moshi.adapter(subtypes.get(i)));
+    List<JsonAdapter<T>> jsonAdapters = new ArrayList<>(subtypes.size());
+    for (Class<? extends T> subtype : subtypes) {
+      jsonAdapters.add((JsonAdapter<T>) moshi.adapter(subtype));
     }
 
-    return new PolymorphicJsonAdapter(labelKey,
+    return new PolymorphicJsonAdapter<>(labelKey,
         labels,
         subtypes,
         jsonAdapters,
@@ -203,12 +203,12 @@ public final class PolymorphicJsonAdapterFactory<T> implements JsonAdapter.Facto
     ).nullSafe();
   }
 
-  static final class PolymorphicJsonAdapter extends JsonAdapter<Object> {
+  static final class PolymorphicJsonAdapter<T> extends JsonAdapter<T> {
     final String labelKey;
     final List<String> labels;
-    final List<Type> subtypes;
-    final List<JsonAdapter<Object>> jsonAdapters;
-    @Nullable final Object defaultValue;
+    final List<Class<? extends T>> subtypes;
+    final List<JsonAdapter<T>> jsonAdapters;
+    @Nullable final T defaultValue;
     final boolean defaultValueSet;
 
     /** Single-element options containing the label's key only. */
@@ -218,9 +218,9 @@ public final class PolymorphicJsonAdapterFactory<T> implements JsonAdapter.Facto
 
     PolymorphicJsonAdapter(String labelKey,
         List<String> labels,
-        List<Type> subtypes,
-        List<JsonAdapter<Object>> jsonAdapters,
-        @Nullable Object defaultValue,
+        List<Class<? extends T>> subtypes,
+        List<JsonAdapter<T>> jsonAdapters,
+        @Nullable T defaultValue,
         boolean defaultValueSet) {
       this.labelKey = labelKey;
       this.labels = labels;
@@ -233,7 +233,7 @@ public final class PolymorphicJsonAdapterFactory<T> implements JsonAdapter.Facto
       this.labelOptions = JsonReader.Options.of(labels.toArray(new String[0]));
     }
 
-    @Override public Object fromJson(JsonReader reader) throws IOException {
+    @Override public T fromJson(JsonReader reader) throws IOException {
       JsonReader peeked = reader.peekJson();
       peeked.setFailOnUnknown(false);
       int labelIndex;
@@ -274,7 +274,7 @@ public final class PolymorphicJsonAdapterFactory<T> implements JsonAdapter.Facto
       throw new JsonDataException("Missing label for " + labelKey);
     }
 
-    @Override public void toJson(JsonWriter writer, Object value) throws IOException {
+    @Override public void toJson(JsonWriter writer, T value) throws IOException {
       Class<?> type = value.getClass();
       int labelIndex = subtypes.indexOf(type);
       if (labelIndex == -1) {
@@ -286,7 +286,7 @@ public final class PolymorphicJsonAdapterFactory<T> implements JsonAdapter.Facto
             + value.getClass()
             + ". Register this subtype.");
       }
-      JsonAdapter<Object> adapter = jsonAdapters.get(labelIndex);
+      JsonAdapter<T> adapter = jsonAdapters.get(labelIndex);
       writer.beginObject();
       writer.name(labelKey).value(labels.get(labelIndex));
       int flattenToken = writer.beginFlatten();
